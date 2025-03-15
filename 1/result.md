@@ -50,3 +50,15 @@ EXPLAIN (ANALYZE, BUFFERS, TIMING) SELECT * FROM orders WHERE o_orderdate > '199
 * **Какое количество страниц считывается?** 313496 (313464 (Buffers: shared read) + 32 (Buffers: shared hit))
 
   * **Сколько из них считалось из кеша?** 32 (Buffers: shared hit)
+
+# Задача 3
+
+* **Сравните время выполнения при выборке всех полей и 3-х полей:**
+
+```sql
+SELECT * FROM lineitem; # Execution Time: 85088.664 ms, width=117
+
+SELECT l_orderkey, l_partkey, l_quantity FROM lineitem; # Execution Time: 60000.594 ms, width=13
+```
+
+* **На сколько байт уменьшается длина строки (width) при выборке 3-х полей?** 104
