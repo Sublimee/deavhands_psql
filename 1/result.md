@@ -3,10 +3,10 @@
 **Проведите полное сканирование таблицы part (вместо orders)**
 
 ```sql
-EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) SELECT * FROM part;
+EXPLAIN (ANALYZE, BUFFERS, TIMING) SELECT * FROM part;
 ```
 
-* **Какое время выполнения?** 00:02:17.298 (Actual Total Time)
+* **Какое время выполнения?** 137298.100 ms (Execution Time)
 
 * **Сколько строчек сканируется?** 2 400 000 (Actual Rows)
 
@@ -23,7 +23,30 @@ Shared Hit Blocks	70
 
 Shared Read Blocks	103653
 
-не подтвеждают активное использование кэша. Влияет кэш операционной системы?
+не подтвеждают активное использование кэша. Влияет кэш операционной системы? Команда
+
+```
+sudo sync; sudo sysctl -w vm.drop_caches=3
+```
+
+и рестарт контейнера не помогли.
+
 </details>
 
 # Задача 2
+
+* **Найдите поле даты создания заказа в таблице orders:** o_orderdate
+
+* **Проведите полное сканирование таблицы orders, фильтруя записи после 1996 года**
+
+```sql
+EXPLAIN (ANALYZE, BUFFERS, TIMING) SELECT * FROM orders WHERE o_orderdate > '1996-01-01';
+```
+
+* **Какое время выполнения?** 59058.100 ms (Execution Time)
+
+* **Сколько строчек сканируется?** 18000000 (7 060 826 (rows) + 10939174 (Rows Removed by Filter))
+
+* **Какое количество страниц считывается?** 313496 (313464 (Buffers: shared read) + 32 (Buffers: shared hit))
+
+  * **Сколько из них считалось из кеша?** 32 (Buffers: shared hit)
