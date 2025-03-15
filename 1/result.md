@@ -6,13 +6,13 @@
 EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) SELECT * FROM part;
 ```
 
-**Какое время выполнения?** 00:02:17.298 (Actual Total Time)
+* **Какое время выполнения?** 00:02:17.298 (Actual Total Time)
 
-**Сколько строчек сканируется?** 2 400 000 (Actual Rows)
+* **Сколько строчек сканируется?** 2 400 000 (Actual Rows)
 
-**Какое количество страниц считывается?** 103723 (Shared Read Blocks)
+* **Какое количество страниц считывается?** 103723 (Shared Read Blocks)
 
-**Сколько из них считалось из кеша?** 0 (Shared Hit Blocks)
+  * **Сколько из них считалось из кеша?** 0 (Shared Hit Blocks)
 
 <details>
 
