@@ -70,3 +70,28 @@ SELECT l_orderkey, l_partkey, l_quantity FROM lineitem; # Execution Time: 60000.
 Можно ли говорить, что выполнение этих двух запросов последовательно показательно с учетом прогрева кэша первым запросом?
 
 </details>
+
+# Задача 4
+
+explain (analyze, timing, buffers)
+select ... from part ...;
+
+* **Найти поля с типом хранения plain/main в таблице part:**
+
+```shell
+psql \d+ part # p_partkey p_size p_retailprice
+```
+
+* Сделать выборку первых 10000 строк результата
+  * используя только поля main+plain
+  * добавив к этим полям p_doc::text
+
+```sql
+SELECT
+    p_partkey,
+    p_size,
+    p_retailprice,
+    p_doc::text as p_doc
+FROM part
+LIMIT 10000;
+```
