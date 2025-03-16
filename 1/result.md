@@ -73,9 +73,6 @@ SELECT l_orderkey, l_partkey, l_quantity FROM lineitem; # Execution Time: 60000.
 
 # Задача 4
 
-explain (analyze, timing, buffers)
-select ... from part ...;
-
 * **Найти поля с типом хранения plain/main в таблице part:**
 
 ```shell
@@ -95,3 +92,60 @@ SELECT
 FROM part
 LIMIT 10000;
 ```
+
+# Задача 5
+
+* **Определить время исполнения и план запроса поиска всех заказов из таблицы orders, сделанных в 1997-12-25. Перед выполнением запроса, запустите на сервере:**
+
+```shell
+stress --cpu 7
+```
+
+```sql
+EXPLAIN (ANALYZE, TIMING, BUFFERS) SELECT * FROM ORDERS WHERE o_orderdate = '1997-12-25';
+```
+
+```
+"QUERY PLAN"
+"Gather  (cost=1000.00..408981.69 rows=7450 width=107) (actual time=21.955..1890.237 rows=7479 loops=1)"
+"  Workers Planned: 2"
+"  Workers Launched: 2"
+"  Buffers: shared hit=481 read=313015"
+"  ->  Parallel Seq Scan on orders  (cost=0.00..407236.69 rows=3104 width=107) (actual time=11.537..1797.913 rows=2493 loops=3)"
+"        Filter: (o_orderdate = '1997-12-25'::date)"
+"        Rows Removed by Filter: 5997507"
+"        Buffers: shared hit=481 read=313015"
+"Planning Time: 0.759 ms"
+"JIT:"
+"  Functions: 6"
+"  Options: Inlining false, Optimization false, Expressions true, Deforming true"
+"  Timing: Generation 1.956 ms (Deform 0.628 ms), Inlining 0.000 ms, Optimization 2.083 ms, Emission 26.228 ms, Total 30.267 ms"
+"Execution Time: 1893.022 ms"
+```
+
+* **Как меняется время выполнения, если запретить параллельное выполнение запроса с помощью:**
+
+```sql
+SET max_parallel_workers_per_gather = 0;
+```
+
+```
+"QUERY PLAN"
+"Gather  (cost=1000.00..408981.69 rows=7450 width=107) (actual time=9.948..1080.551 rows=7479 loops=1)"
+"  Workers Planned: 2"
+"  Workers Launched: 2"
+"  Buffers: shared hit=1057 read=312439"
+"  ->  Parallel Seq Scan on orders  (cost=0.00..407236.69 rows=3104 width=107) (actual time=10.354..1032.884 rows=2493 loops=3)"
+"        Filter: (o_orderdate = '1997-12-25'::date)"
+"        Rows Removed by Filter: 5997507"
+"        Buffers: shared hit=1057 read=312439"
+"Planning Time: 0.086 ms"
+"JIT:"
+"  Functions: 6"
+"  Options: Inlining false, Optimization false, Expressions true, Deforming true"
+"  Timing: Generation 1.036 ms (Deform 0.465 ms), Inlining 0.000 ms, Optimization 0.949 ms, Emission 26.241 ms, Total 28.225 ms"
+"Execution Time: 1082.002 ms"
+```
+
+Время выполнения в конкретных прогонах уменьшилось, хотя все зависит от прогретости кэша: при повторных прогонах получаю приблизительно равные показатели времени ыполнения (800-1100 ms).
+
