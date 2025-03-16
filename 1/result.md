@@ -149,3 +149,53 @@ SET max_parallel_workers_per_gather = 0;
 
 Время выполнения в конкретных прогонах уменьшилось, хотя все зависит от прогретости кэша: при повторных прогонах получаю приблизительно равные показатели времени ыполнения (800-1100 ms).
 
+# Задача 6
+
+Ускорьте запрос, добавив индекс нужного типа (известно, что приложение делает выборки только с операцией равенство):
+
+```sql
+select l_orderkey from lineitem where l_shipdate = '1996-12-01';
+```
+
+```sql
+EXPLAIN (ANALYZE, TIMING, BUFFERS) select l_orderkey from lineitem where l_shipdate = '1996-12-01';
+```
+
+```
+"QUERY PLAN"
+"Gather  (cost=1000.00..1728924.92 rows=28495 width=4) (actual time=85.717..20729.047 rows=30101 loops=1)"
+"  Workers Planned: 2"
+"  Workers Launched: 2"
+"  Buffers: shared hit=96 read=1350072"
+"  ->  Parallel Seq Scan on lineitem  (cost=0.00..1725075.42 rows=11873 width=4) (actual time=192.039..20566.698 rows=10034 loops=3)"
+"        Filter: (l_shipdate = '1996-12-01'::date)"
+"        Rows Removed by Filter: 23984992"
+"        Buffers: shared hit=96 read=1350072"
+"Planning Time: 0.624 ms"
+"JIT:"
+"  Functions: 12"
+"  Options: Inlining true, Optimization true, Expressions true, Deforming true"
+"  Timing: Generation 4.542 ms (Deform 1.548 ms), Inlining 300.259 ms, Optimization 152.917 ms, Emission 92.081 ms, Total 549.799 ms"
+"Execution Time: 20746.216 ms"
+```
+
+```sql
+CREATE INDEX shipdate_idx ON lineitem USING HASH (l_shipdate);
+```
+
+```
+"QUERY PLAN"
+"Bitmap Heap Scan on lineitem  (cost=916.84..101843.23 rows=28496 width=4) (actual time=17.610..206.555 rows=30101 loops=1)"
+"  Recheck Cond: (l_shipdate = '1996-12-01'::date)"
+"  Heap Blocks: exact=29343"
+"  Buffers: shared read=29417"
+"  ->  Bitmap Index Scan on shipdate_idx  (cost=0.00..909.72 rows=28496 width=0) (actual time=7.816..7.817 rows=30101 loops=1)"
+"        Index Cond: (l_shipdate = '1996-12-01'::date)"
+"        Buffers: shared read=74"
+"Planning Time: 0.108 ms"
+"JIT:"
+"  Functions: 4"
+"  Options: Inlining false, Optimization false, Expressions true, Deforming true"
+"  Timing: Generation 0.603 ms (Deform 0.302 ms), Inlining 0.000 ms, Optimization 0.426 ms, Emission 3.717 ms, Total 4.746 ms"
+"Execution Time: 209.481 ms"
+```
