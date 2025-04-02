@@ -359,3 +359,195 @@ explain analyze select * from lineitem ORDER BY l_discount DESC, l_extendedprice
 * Как влияет на использование памяти и производительность количество параллельных воркеров max_parallel_workers_per_gather?
 
 Объем памяти увеличивается. До определнного количества воркеров увеличивается и производительность.
+
+# Задача 5.Соединение
+
+```sql
+SELECT o.o_orderkey AS document_id, jsonb_build_object('order', jsonb_build_object('orderkey', o.o_orderkey, 'custkey', o.o_custkey, 'orderstatus', o.o_orderstatus, 'totalprice', o.o_totalprice, 'orderdate', o.o_orderdate, 'orderpriority', o.o_orderpriority, 'clerk', o.o_clerk, 'shippriority', o.o_shippriority, 'comment', o.o_comment), 'customer', jsonb_build_object('custkey', c.c_custkey, 'name', c.c_name, 'address', c.c_address, 'nationkey', c.c_nationkey, 'phone', c.c_phone, 'acctbal', c.c_acctbal, 'mktsegment', c.c_mktsegment, 'comment', c.c_comment)) AS document_data FROM orders o JOIN customer c ON o.o_custkey = c.c_custkey WHERE c.c_custkey IN (SELECT c_custkey FROM customer ORDER BY c_custkey LIMIT 5);
+```
+
+```
+"Hash Join  (cost=129987.02..690959.58 rows=86 width=36) (actual time=1021.708..4756.340 rows=42 loops=1)"
+"  Hash Cond: (o.o_custkey = c.c_custkey)"
+"  ->  Seq Scan on orders o  (cost=0.00..493478.12 rows=17998212 width=107) (actual time=0.089..2336.033 rows=18000000 loops=1)"
+"  ->  Hash  (cost=129986.96..129986.96 rows=5 width=162) (actual time=968.160..968.349 rows=5 loops=1)"
+"        Buckets: 1024  Batches: 1  Memory Usage: 9kB"
+"        ->  Hash Semi Join  (cost=64109.90..129986.96 rows=5 width=162) (actual time=698.415..968.313 rows=5 loops=1)"
+"              Hash Cond: (c.c_custkey = customer.c_custkey)"
+"              ->  Seq Scan on customer c  (cost=0.00..61152.00 rows=1800000 width=158) (actual time=0.031..241.761 rows=1800000 loops=1)"
+"              ->  Hash  (cost=64109.84..64109.84 rows=5 width=4) (actual time=583.396..583.581 rows=5 loops=1)"
+"                    Buckets: 1024  Batches: 1  Memory Usage: 9kB"
+"                    ->  Limit  (cost=64109.25..64109.84 rows=5 width=4) (actual time=583.311..583.498 rows=5 loops=1)"
+"                          ->  Gather Merge  (cost=64109.25..239121.47 rows=1500000 width=4) (actual time=282.948..283.133 rows=5 loops=1)"
+"                                Workers Planned: 2"
+"                                Workers Launched: 2"
+"                                ->  Sort  (cost=63109.23..64984.23 rows=750000 width=4) (actual time=244.798..244.801 rows=5 loops=3)"
+"                                      Sort Key: customer.c_custkey"
+"                                      Sort Method: top-N heapsort  Memory: 25kB"
+"                                      Worker 0:  Sort Method: top-N heapsort  Memory: 25kB"
+"                                      Worker 1:  Sort Method: top-N heapsort  Memory: 25kB"
+"                                      ->  Parallel Seq Scan on customer  (cost=0.00..50652.00 rows=750000 width=4) (actual time=75.391..215.372 rows=600000 loops=3)"
+"Planning Time: 0.241 ms"
+"JIT:"
+"  Functions: 25"
+"  Options: Inlining true, Optimization true, Expressions true, Deforming true"
+"  Timing: Generation 2.629 ms (Deform 1.620 ms), Inlining 217.755 ms, Optimization 187.018 ms, Emission 121.702 ms, Total 529.103 ms"
+"Execution Time: 4759.011 ms"
+```
+
+* Добавьте минимальное количество индексов для ускорения запроса
+
+```sql
+ -- Ускоряет соединение между orders и customer
+CREATE INDEX idx_orders_o_custkey ON orders (o_custkey);
+
+-- Ускоряет соединение и фильтрацию в подзапросе
+CREATE INDEX idx_customer_c_custkey ON customer (c_custkey);
+```
+
+```
+"Nested Loop  (cost=1.44..51.75 rows=86 width=36) (actual time=0.078..0.604 rows=42 loops=1)"
+"  ->  Nested Loop  (cost=1.00..42.90 rows=5 width=162) (actual time=0.033..0.046 rows=5 loops=1)"
+"        ->  HashAggregate  (cost=0.57..0.62 rows=5 width=4) (actual time=0.022..0.024 rows=5 loops=1)"
+"              Group Key: customer.c_custkey"
+"              Batches: 1  Memory Usage: 24kB"
+"              ->  Limit  (cost=0.43..0.56 rows=5 width=4) (actual time=0.015..0.016 rows=5 loops=1)"
+"                    ->  Index Only Scan using idx_c_custkey on customer  (cost=0.43..46802.43 rows=1800000 width=4) (actual time=0.014..0.015 rows=5 loops=1)"
+"                          Heap Fetches: 0"
+"        ->  Index Scan using idx_c_custkey on customer c  (cost=0.43..8.45 rows=1 width=158) (actual time=0.003..0.003 rows=1 loops=5)"
+"              Index Cond: (c_custkey = customer.c_custkey)"
+"  ->  Index Scan using idx_orders_o_custkey on orders o  (cost=0.44..1.47 rows=17 width=107) (actual time=0.003..0.013 rows=8 loops=5)"
+"        Index Cond: (o_custkey = c.c_custkey)"
+"Planning Time: 0.567 ms"
+"Execution Time: 0.652 ms"
+```
+
+* Получить распределение значений c.c_custkey, изменить запрос, чтобы генерировать документы для 30% от всех клиентов
+
+```
+SELECT width_bucket(c_custkey, (SELECT MIN(c_custkey) FROM customer), (SELECT MAX(c_custkey) FROM customer), 10) AS bucket,
+       COUNT(*) AS count
+FROM customer
+GROUP BY bucket
+ORDER BY bucket;
+```
+
+```
+"bucket"	"count"
+1	180000
+2	180000
+3	180000
+4	180000
+5	180000
+6	180000
+7	180000
+8	180000
+9	180000
+10	179999
+11	1
+```
+
+```sql
+EXPLAIN ANALYZE WITH total AS (
+  SELECT COUNT(*) AS total_customers FROM customer
+)
+SELECT
+  o.o_orderkey AS document_id,
+  jsonb_build_object(
+    'order', jsonb_build_object(
+      'orderkey', o.o_orderkey,
+      'custkey', o.o_custkey,
+      'orderstatus', o.o_orderstatus,
+      'totalprice', o.o_totalprice,
+      'orderdate', o.o_orderdate,
+      'orderpriority', o.o_orderpriority,
+      'clerk', o.o_clerk,
+      'shippriority', o.o_shippriority,
+      'comment', o.o_comment
+    ),
+    'customer', jsonb_build_object(
+      'custkey', c.c_custkey,
+      'name', c.c_name,
+      'address', c.c_address,
+      'nationkey', c.c_nationkey,
+      'phone', c.c_phone,
+      'acctbal', c.c_acctbal,
+      'mktsegment', c.c_mktsegment,
+      'comment', c.c_comment
+    )
+  ) AS document_data
+FROM orders o
+LEFT JOIN customer c
+  ON o.o_custkey = c.c_custkey
+  LIMIT (SELECT total_customers * 0.3 FROM total);
+```
+
+```
+"Limit  (cost=39187.70..244413.61 rows=1800000 width=36) (actual time=192.517..10991.629 rows=540000 loops=1)"
+"  InitPlan 1"
+"    ->  Subquery Scan on total  (cost=39177.64..39177.66 rows=1 width=32) (actual time=174.710..174.932 rows=1 loops=1)"
+"          ->  Finalize Aggregate  (cost=39177.64..39177.65 rows=1 width=8) (actual time=174.684..174.903 rows=1 loops=1)"
+"                ->  Gather  (cost=39177.43..39177.64 rows=2 width=8) (actual time=174.478..174.883 rows=3 loops=1)"
+"                      Workers Planned: 2"
+"                      Workers Launched: 2"
+"                      ->  Partial Aggregate  (cost=38177.43..38177.44 rows=1 width=8) (actual time=128.728..128.737 rows=1 loops=3)"
+"                            ->  Parallel Index Only Scan using idx_c_custkey on customer  (cost=0.43..36302.43 rows=750000 width=0) (actual time=0.100..100.283 rows=600000 loops=3)"
+"                                  Heap Fetches: 0"
+"  ->  Merge Right Join  (cost=10.04..2052269.13 rows=18000000 width=36) (actual time=0.202..10735.635 rows=540000 loops=1)"
+"        Merge Cond: (c.c_custkey = o.o_custkey)"
+"        ->  Index Scan using idx_c_custkey on customer c  (cost=0.43..89913.05 rows=1800000 width=158) (actual time=0.049..41.728 rows=54058 loops=1)"
+"        ->  Index Scan using idx_orders_o_custkey on orders o  (cost=0.44..1597856.08 rows=18000000 width=107) (actual time=0.060..4189.910 rows=540000 loops=1)"
+"Planning Time: 1.399 ms"
+"JIT:"
+"  Functions: 17"
+"  Options: Inlining false, Optimization false, Expressions true, Deforming true"
+"  Timing: Generation 10.084 ms (Deform 6.626 ms), Inlining 0.000 ms, Optimization 1.729 ms, Emission 23.556 ms, Total 35.369 ms"
+"Execution Time: 11042.053 ms"
+```
+
+<details>
+
+<summary>Вопросы</summary>
+
+Сравнить с:
+
+```sql
+EXPLAIN ANALYZE WITH total AS (
+  SELECT COUNT(*) AS total_customers FROM customer
+),
+c AS (
+  SELECT *
+  FROM customer, total
+  ORDER BY c_custkey
+  LIMIT (SELECT total_customers * 0.3 FROM total)
+)
+SELECT
+  o.o_orderkey AS document_id,
+  jsonb_build_object(
+    'order', jsonb_build_object(
+      'orderkey', o.o_orderkey,
+      'custkey', o.o_custkey,
+      'orderstatus', o.o_orderstatus,
+      'totalprice', o.o_totalprice,
+      'orderdate', o.o_orderdate,
+      'orderpriority', o.o_orderpriority,
+      'clerk', o.o_clerk,
+      'shippriority', o.o_shippriority,
+      'comment', o.o_comment
+    ),
+    'customer', jsonb_build_object(
+      'custkey', c.c_custkey,
+      'name', c.c_name,
+      'address', c.c_address,
+      'nationkey', c.c_nationkey,
+      'phone', c.c_phone,
+      'acctbal', c.c_acctbal,
+      'mktsegment', c.c_mktsegment,
+      'comment', c.c_comment
+    )
+  ) AS document_data
+FROM orders o
+LEFT JOIN c ON o.o_custkey = c.c_custkey;```
+```
+
+</details>
