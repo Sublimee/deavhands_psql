@@ -27,7 +27,7 @@ c_mktsegment
 * **Добейтесь максимальной производительности запрос, используя btree индекс**
 
 ```sql
-CREATE INDEX idx_customer_c_mktsegment_c_acctbal ON customer (c_mktsegment, c_acctbal); -- 15ms
+CREATE INDEX idx_customer_c_mktsegment_c_acctbal ON customer (c_mktsegment, c_acctbal); -- время выполнения select составило 15ms
 ```
 
 <details>
@@ -134,3 +134,74 @@ EXPLAIN ANALYZE select * from customer WHERE c_phone LIKE '1%'; -- 727273
 
 В результате выполнения запросов поняли, что данные распределены достаточно равномерно. Также нужно учитывать размеры полей, которые попадают в индекс: жирные поля -- меньше гибкость при добавлении полей в индекс.
 
+# Задача 3. Сортировка по индексу
+
+```sql
+select * from customer WHERE c_mktsegment = 'FURNITURE' and c_acctbal BETWEEN 4500 and 6700 ORDER BY c_acctbal;
+```
+
+* Можно ли использовать индексы, которые вы уже создали в этой практике для ускорения запроса с сортировкой?
+
+Да, индекс:
+
+```sql
+CREATE INDEX idx_customer_mktsegment_acctbal ON customer (c_mktsegment, c_acctbal);
+```
+
+подойдет. Поиск будет выполнен с помощью индекса, а сортировка в памяти после прохода по Bitmap. Это подтверждается результатом выполнения:
+
+```sql
+explain analyze select * from customer WHERE c_mktsegment = 'FURNITURE' and c_acctbal BETWEEN 4500 and 6700 ORDER BY c_acctbal;
+```
+
+```
+"QUERY PLAN"
+"Sort  (cost=59594.17..59770.75 rows=70633 width=158) (actual time=937.796..958.102 rows=71545 loops=1)"
+"  Sort Key: c_acctbal"
+"  Sort Method: external merge  Disk: 12040kB"
+"  ->  Bitmap Heap Scan on customer  (cost=2301.00..48350.87 rows=70633 width=158) (actual time=16.080..185.468 rows=71545 loops=1)"
+"        Recheck Cond: ((c_mktsegment = 'FURNITURE'::bpchar) AND (c_acctbal >= '4500'::numeric) AND (c_acctbal <= '6700'::numeric))"
+"        Heap Blocks: exact=35147"
+"        ->  Bitmap Index Scan on idx_customer_mktsegment_acctbal  (cost=0.00..2283.34 rows=70633 width=0) (actual time=24.393..24.395 rows=71545 loops=1)"
+"              Index Cond: ((c_mktsegment = 'FURNITURE'::bpchar) AND (c_acctbal >= '4500'::numeric) AND (c_acctbal <= '6700'::numeric))"
+"Planning Time: 0.166 ms"
+"Execution Time: 258.523 ms"
+```
+
+* Определите производительность запроса, если индекс не будет использоваться
+  * Используйте pg_hint_plan или drop в транзакции + rollback
+
+Предварительно удалил все ранее созданные индексы.
+
+```sql
+EXPLAIN ANALYZE select * from customer WHERE c_mktsegment = 'FURNITURE' and c_acctbal BETWEEN 4500 and 6700 ORDER BY c_acctbal;
+```
+
+```
+"Gather Merge  (cost=61778.47..68645.94 rows=58860 width=158) (actual time=166.888..199.346 rows=71545 loops=1)"
+"  Workers Planned: 2"
+"  Workers Launched: 2"
+"  ->  Sort  (cost=60778.44..60852.02 rows=29430 width=158) (actual time=162.712..168.288 rows=23848 loops=3)"
+"        Sort Key: c_acctbal"
+"        Sort Method: external merge  Disk: 4240kB"
+"        Worker 0:  Sort Method: external merge  Disk: 3688kB"
+"        Worker 1:  Sort Method: external merge  Disk: 4136kB"
+"        ->  Parallel Seq Scan on customer  (cost=0.00..56277.00 rows=29430 width=158) (actual time=0.033..140.388 rows=23848 loops=3)"
+"              Filter: ((c_acctbal >= '4500'::numeric) AND (c_acctbal <= '6700'::numeric) AND (c_mktsegment = 'FURNITURE'::bpchar))"
+"              Rows Removed by Filter: 576152"
+"Planning Time: 0.113 ms"
+"Execution Time: 191.536 ms"
+```
+
+Запрос без индекса выполнился быстрее по причине необходимости в работе с Bitmap и Heap при наличии индекса.
+
+# Задача 4. Сортировка без индекса
+
+```sql
+explain analyze select * from lineitem ORDER BY l_discount DESC, l_extendedprice LIMIT 10000;
+```
+
+* Добейтесь повышения производительности запроса без использования индексов
+* Для сортировки используется буфер: set work_mem='4MB';
+  * Насколько можно увеличить этот буфер?
+* Как влияет на использование памяти и производительность количество параллельных воркеров max_parallel_workers_per_gather? 
