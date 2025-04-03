@@ -148,7 +148,21 @@ select * from customer WHERE c_mktsegment = 'FURNITURE' and c_acctbal BETWEEN 45
 CREATE INDEX idx_customer_mktsegment_acctbal ON customer (c_mktsegment, c_acctbal);
 ```
 
-подойдет. Поиск будет выполнен с помощью индекса, а сортировка в памяти после прохода по Bitmap. Это подтверждается результатом выполнения:
+подойдет. Сортировка с помощью индекса (чтение строк из индекса в сортированном виде) будет выполнена, если мы будем выбирать только те поля, которые добавляли в индекс:
+
+```sql
+explain analyze select c_mktsegment,c_acctbal from customer WHERE c_mktsegment = 'FURNITURE' and c_acctbal BETWEEN 4500 and 6700 ORDER BY c_acctbal;
+```
+
+```
+"Index Only Scan using idx_customer_mktsegment_acctbal on customer  (cost=0.43..3142.26 rows=70633 width=17) (actual time=0.040..10.266 rows=71545 loops=1)"
+"  Index Cond: ((c_mktsegment = 'FURNITURE'::bpchar) AND (c_acctbal >= '4500'::numeric) AND (c_acctbal <= '6700'::numeric))"
+"  Heap Fetches: 0"
+"Planning Time: 0.130 ms"
+"Execution Time: 12.449 ms"
+```
+
+Иначе с помощью индекса будет выполнен поиск, а сортировка в памяти после прохода по Bitmap. Это подтверждается результатом выполнения:
 
 ```sql
 explain analyze select * from customer WHERE c_mktsegment = 'FURNITURE' and c_acctbal BETWEEN 4500 and 6700 ORDER BY c_acctbal;
