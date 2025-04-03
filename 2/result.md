@@ -551,3 +551,61 @@ LEFT JOIN c ON o.o_custkey = c.c_custkey;```
 ```
 
 </details>
+
+# Задача 6. Нормализация
+
+```sql
+INSERT INTO order_details (order_id, customer_name, order_date, item1_name, item1_quantity, item1_price, 
+item2_name, item2_quantity, item2_price, item3_name, item3_quantity, item3_price) VALUES
+ (1, 'John Doe', '2023-10-01', 'Laptop', 1, 1200.00, 'Mouse', 2, 25.00, 'Keyboard', 1, 50.00),
+ (2, 'Jane Smith', '2023-10-02', 'Monitor', 1, 300.00, 'HDMI Cable', 1, 15.00, NULL, NULL, NULL),
+ (3, 'Alice Johnson', '2023-10-03', 'Printer', 1, 200.00, 'Paper', 5, 10.00, 'Ink Cartridge', 2, 40.00);
+```
+
+* Работая с базой TPCH, вы обнаружили Legacy код который делал вставку в таблицу order_details с неизвестной структурой. Воспроизведите, какая структура у таблицы order_details.
+
+```sql
+CREATE TABLE order_details (
+    order_id INT PRIMARY KEY NOT NULL,
+    customer_name VARCHAR(25) NOT NULL,
+    order_date DATE NOT NULL,
+    item1_name VARCHAR(45) NOT NULL,
+    item1_quantity NUMERIC(15,2) NOT NULL,
+    item1_price NUMERIC(15,2) NOT NULL,
+    item2_name VARCHAR(45),
+    item2_quantity NUMERIC(15,2),
+    item2_price NUMERIC(15,2),
+    item3_name VARCHAR(45),
+    item3_quantity NUMERIC(15,2),
+    item3_price NUMERIC(15,2)
+);
+```
+
+* Находится ли таблица order_details в 1NF? (Обоснуйте)
+  * Если нет, переведите её в 1NF
+
+Таблица находится в 1NF, если:
+
+ ✔ если все строки поменяют порядок нет потери информации
+ 
+ ✔ если колонки поменять местами нет потери информации
+ 
+ ✔ нет одинаковых строк
+ 
+ ✔ одно значение (не массив, не сложный тип, не JSON) в ячейке
+ 
+ ✔ одинаковый тип данных и ограничения на всю колонку
+
+Однако таблица содержит повторяющиеся группы столбцов: item*_name, item*_quantity, item*_price, что в некотором смысле можно считать хранением массива в колонках вместо разбиения на отдельные строки.
+
+```sql
+CREATE TABLE orders_by_customer (order_id INT PRIMARY KEY, customer_name VARCHAR(25) NOT NULL, order_date DATE NOT NULL);
+
+CREATE TABLE order_items (order_id INT REFERENCES orders_by_customer(order_id), item_name VARCHAR(45) NOT NULL, item_quantity NUMERIC(15,2) NOT NULL, item_price NUMERIC(15,2)) NOT NULL;
+```
+
+Теперь:
+
+  * каждая товарная позиция — отдельная строка в order_items;
+
+  * нет ограничений на количество товаров.
