@@ -4,17 +4,24 @@
 CREATE TABLE customer_c AS SELECT * FROM customer WITH NO DATA;
 CREATE TABLE customer_unicode AS SELECT * FROM customer WITH NO DATA;
 INSERT INTO customer_c
-SELECT * FROM customer;
+ SELECT * FROM customer;
 INSERT INTO customer_unicode
-SELECT * FROM customer;
+ SELECT * FROM customer;
 ALTER TABLE customer_c
-ALTER COLUMN c_name SET DATA TYPE varchar(25) COLLATE "C",
-ALTER COLUMN c_address SET DATA TYPE varchar(40) COLLATE "C",
-ALTER COLUMN c_phone SET DATA TYPE char(15) COLLATE "C";
+ ALTER COLUMN c_name SET DATA TYPE varchar(25) COLLATE "C",
+ ALTER COLUMN c_address SET DATA TYPE varchar(40) COLLATE "C",
+ ALTER COLUMN c_phone SET DATA TYPE char(15) COLLATE "C";
 ALTER TABLE customer_unicode
-ALTER COLUMN c_name SET DATA TYPE varchar(25) COLLATE "en_US.utf8",
-ALTER COLUMN c_address SET DATA TYPE varchar(40) COLLATE "en_US.utf8",
-ALTER COLUMN c_phone SET DATA TYPE char(15) COLLATE "en_US.utf8";
+ ALTER COLUMN c_name SET DATA TYPE varchar(25) COLLATE "en_US.utf8",
+ ALTER COLUMN c_address SET DATA TYPE varchar(40) COLLATE "en_US.utf8",
+ ALTER COLUMN c_phone SET DATA TYPE char(15) COLLATE "en_US.utf8";
+
+CREATE TABLE customer_icu AS SELECT * FROM customer WITH NO DATA;
+INSERT INTO customer_icu SELECT * FROM customer;
+ALTER TABLE customer_icu
+ ALTER COLUMN c_name SET DATA TYPE varchar(25) COLLATE "en-x-icu",
+ ALTER COLUMN c_address SET DATA TYPE varchar(40) COLLATE "en-x-icu",
+ ALTER COLUMN c_phone SET DATA TYPE char(15) COLLATE "en-x-icu";
 ```
 
 Измерить время выполнения запросов без использования индексов:
@@ -23,6 +30,60 @@ ALTER COLUMN c_phone SET DATA TYPE char(15) COLLATE "en_US.utf8";
 SELECT * FROM customer_c ORDER BY c_name DESC
 SELECT * FROM customer_unicode ORDER BY c_name DESC
 SELECT * FROM customer_icu ORDER BY c_name DESC
+```
+
+```sql
+EXPLAIN ANALYZE SELECT * FROM customer_c ORDER BY c_name DESC;
+```
+
+```
+"Gather Merge  (cost=242617.87..417641.99 rows=1500102 width=158) (actual time=571.337..1146.380 rows=1800000 loops=1)"
+"  Workers Planned: 2"
+"  Workers Launched: 2"
+"  ->  Sort  (cost=241617.84..243492.97 rows=750051 width=158) (actual time=550.626..666.364 rows=600000 loops=3)"
+"        Sort Key: c_name COLLATE ""C"" DESC"
+"        Sort Method: external merge  Disk: 106592kB"
+"        Worker 0:  Sort Method: external merge  Disk: 109776kB"
+"        Worker 1:  Sort Method: external merge  Disk: 86672kB"
+"        ->  Parallel Seq Scan on customer_c  (cost=0.00..50496.51 rows=750051 width=158) (actual time=0.097..84.754 rows=600000 loops=3)"
+"Planning Time: 0.079 ms"
+"Execution Time: 1238.560 ms"
+```
+
+```sql
+EXPLAIN ANALYZE SELECT * FROM customer_unicode ORDER BY c_name DESC;
+```
+
+```
+"Gather Merge  (cost=242614.89..417632.94 rows=1500050 width=158) (actual time=4087.902..5973.889 rows=1800000 loops=1)"
+"  Workers Planned: 2"
+"  Workers Launched: 2"
+"  ->  Sort  (cost=241614.87..243489.93 rows=750025 width=158) (actual time=4001.113..4287.246 rows=600000 loops=3)"
+"        Sort Key: c_name COLLATE ""en_US.utf8"" DESC"
+"        Sort Method: external merge  Disk: 99840kB"
+"        Worker 0:  Sort Method: external merge  Disk: 96728kB"
+"        Worker 1:  Sort Method: external merge  Disk: 106480kB"
+"        ->  Parallel Seq Scan on customer_unicode  (cost=0.00..50496.25 rows=750025 width=158) (actual time=0.062..84.381 rows=600000 loops=3)"
+"Planning Time: 0.087 ms"
+"Execution Time: 6072.528 ms"
+```
+
+```sql
+EXPLAIN ANALYZE SELECT * FROM customer_icu ORDER BY c_name DESC;
+```
+
+```
+"Gather Merge  (cost=192449.06..250975.48 rows=501620 width=552) (actual time=1368.446..2257.883 rows=1800000 loops=1)"
+"  Workers Planned: 2"
+"  Workers Launched: 2"
+"  ->  Sort  (cost=191449.04..192076.06 rows=250810 width=552) (actual time=1351.690..1513.952 rows=600000 loops=3)"
+"        Sort Key: c_name COLLATE ""en-x-icu"" DESC"
+"        Sort Method: external merge  Disk: 103352kB"
+"        Worker 0:  Sort Method: external merge  Disk: 99848kB"
+"        Worker 1:  Sort Method: external merge  Disk: 99840kB"
+"        ->  Parallel Seq Scan on customer_icu  (cost=0.00..45504.10 rows=250810 width=552) (actual time=0.205..88.205 rows=600000 loops=3)"
+"Planning Time: 0.094 ms"
+"Execution Time: 2356.389 ms"
 ```
 
 # Задание 2. Составные типы
