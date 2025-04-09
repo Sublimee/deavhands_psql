@@ -128,7 +128,14 @@ INSERT INTO simple_denormalized_orders
 CREATE INDEX ON lineitem(l_orderkey);
 ```
 
-ВОПРОС Можно ли было еще ускориться с помощью индексов?
+
+<details>
+
+<summary>Вопросы</summary>
+
+Можно ли было еще ускориться с помощью индексов?
+
+</details>
 
 ```sql
 Explain ANALYZE SELECT order_id, item.product_id, item.quantity
@@ -258,7 +265,13 @@ WHERE order_info @? '$.items[*] ? (@.quantity == 1)';
 "Execution Time: 3677.304 ms"
 ```
 
-ВОПРОС Как будет выглядеть правильный индекс?
+<details>
+
+<summary>Вопросы</summary>
+
+Как будет выглядеть правильный индекс?
+
+</details>
 
 # Задание 4. VIEW
 
