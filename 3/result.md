@@ -88,6 +88,8 @@ EXPLAIN ANALYZE SELECT * FROM customer_icu ORDER BY c_name DESC;
 
 # Задание 2. Составные типы
 
+Сравните производительность денормализованной таблицы с обычным JOIN по нормализованным таблицам.
+
 ```sql
 CREATE TYPE simple_lineitem AS (
  product_id integer,
@@ -106,31 +108,76 @@ CREATE TABLE simple_denormalized_orders (
 );
 INSERT INTO simple_denormalized_orders
  SELECT
-  o.o_orderkey as order_id,
-  o.o_custkey as customer_id,
-  (
-     o.o_orderdate,
-     o.o_totalprice,
-     ARRAY(
-         SELECT (l.l_partkey, l.l_quantity, l.l_extendedprice)::simple_lineitem
-         FROM lineitem l
-         WHERE l.l_orderkey = o.o_orderkey
-     )::simple_lineitem[]
-  )::simple_order_details
- FROM orders o
- WHERE o.o_orderkey IN (SELECT l_orderkey FROM lineitem LIMIT 100);
+ o.o_orderkey as order_id,
+ o.o_custkey as customer_id,
+ (
+    o.o_orderdate,
+    o.o_totalprice,
+    ARRAY(
+        SELECT (l.l_partkey, l.l_quantity, l.l_extendedprice)::simple_lineitem
+        FROM lineitem l
+        WHERE l.l_orderkey = o.o_orderkey
+    )::simple_lineitem[]
+ )::simple_order_details
+ FROM orders o;
 ```
 
-Сравните производительность денормализованной таблицы с обычным JOIN по нормализованным таблицам.
+Избавился от LIMIT, предварительно создав индекс:
 
 ```sql
-SELECT order_id, item.product_id, item.quantity
+CREATE INDEX ON lineitem(l_orderkey);
+```
+
+ВОПРОС Можно ли было еще ускориться с помощью индексов?
+
+```sql
+Explain ANALYZE SELECT order_id, item.product_id, item.quantity
 FROM simple_denormalized_orders,
      unnest((order_info).items) AS item
 WHERE item.quantity > 30;
 ```
 
+```
+"Nested Loop  (cost=0.00..3603630.51 rows=53990682 width=26) (actual time=68.768..29632.646 rows=28796266 loops=1)"
+"  ->  Seq Scan on simple_denormalized_orders  (cost=0.00..814111.94 rows=17996894 width=252) (actual time=0.063..5112.781 rows=18000000 loops=1)"
+"  ->  Function Scan on unnest item  (cost=0.00..0.13 rows=3 width=22) (actual time=0.001..0.001 rows=2 loops=18000000)"
+"        Filter: (quantity > '30'::numeric)"
+"        Rows Removed by Filter: 2"
+"Planning Time: 0.185 ms"
+"JIT:"
+"  Functions: 6"
+"  Options: Inlining true, Optimization true, Expressions true, Deforming true"
+"  Timing: Generation 0.836 ms (Deform 0.241 ms), Inlining 14.007 ms, Optimization 32.303 ms, Emission 22.333 ms, Total 69.479 ms"
+"Execution Time: 30622.790 ms"
+```
+
+```sql
+EXPLAIN ANALYZE SELECT o.o_orderkey, l.l_partkey, l.l_quantity
+FROM orders o
+JOIN lineitem l ON l.l_orderkey = o.o_orderkey
+WHERE l.l_quantity > 30;
+```
+
+```
+"Hash Join  (cost=788809.00..4410654.59 rows=29074774 width=13) (actual time=12904.872..74460.832 rows=28796266 loops=1)"
+"  Hash Cond: (l.l_orderkey = o.o_orderkey)"
+"  ->  Seq Scan on lineitem l  (cost=0.00..2249981.50 rows=29074774 width=13) (actual time=87.769..38167.071 rows=28796266 loops=1)"
+"        Filter: (l_quantity > '30'::numeric)"
+"        Rows Removed by Filter: 43188811"
+"  ->  Hash  (cost=493496.00..493496.00 rows=18000000 width=4) (actual time=12811.452..12811.468 rows=18000000 loops=1)"
+"        Buckets: 262144  Batches: 128  Memory Usage: 6981kB"
+"        ->  Seq Scan on orders o  (cost=0.00..493496.00 rows=18000000 width=4) (actual time=0.599..8742.063 rows=18000000 loops=1)"
+"Planning Time: 0.838 ms"
+"JIT:"
+"  Functions: 12"
+"  Options: Inlining true, Optimization true, Expressions true, Deforming true"
+"  Timing: Generation 4.630 ms (Deform 1.711 ms), Inlining 21.177 ms, Optimization 36.258 ms, Emission 30.242 ms, Total 92.307 ms"
+"Execution Time: 75529.817 ms"
+```
+
 # Задание 3. JSON
+
+Расширил исходный LIMIT до 10000000:
 
 ```sql
 CREATE TABLE simple_json_orders (
@@ -156,10 +203,8 @@ CREATE TABLE simple_json_orders (
     )
  )
  FROM orders o
- WHERE o.o_orderkey IN (SELECT l_orderkey FROM lineitem LIMIT 1000000);
+ WHERE o.o_orderkey IN (SELECT l_orderkey FROM lineitem LIMIT 10000000);
 ```
-
-Ускорьте работу запроса с помощью GIN индекса.
 
 ```sql
 SELECT
@@ -172,6 +217,48 @@ AS quantity
  jsonb_array_elements(order_info->'items') AS item
  WHERE order_info @? '$.items[*] ? (@.quantity == 1)';
 ```
+
+```
+"Nested Loop  (cost=0.01..709325.94 rows=17677900 width=40) (actual time=99.333..3589.817 rows=954827 loops=1)"
+"  ->  Seq Scan on simple_json_orders  (cost=0.00..178988.94 rows=176779 width=439) (actual time=99.281..2642.763 rows=192170 loops=1)"
+"        Filter: (order_info @? '$.""items""[*]?(@.""quantity"" == 1)'::jsonpath)"
+"        Rows Removed by Filter: 2307985"
+"  ->  Function Scan on jsonb_array_elements item  (cost=0.01..1.00 rows=100 width=32) (actual time=0.001..0.001 rows=5 loops=192170)"
+"Planning Time: 0.251 ms"
+"JIT:"
+"  Functions: 6"
+"  Options: Inlining true, Optimization true, Expressions true, Deforming true"
+"  Timing: Generation 0.993 ms (Deform 0.306 ms), Inlining 25.435 ms, Optimization 46.935 ms, Emission 26.784 ms, Total 100.147 ms"
+"Execution Time: 3630.107 ms"
+```
+
+Ускорьте работу запроса с помощью GIN индекса.
+
+Пробовал такой индекс:
+
+```sql
+CREATE INDEX idx_partial_jsonpath_quantity_13
+ON simple_json_orders
+USING GIN (order_info)
+WHERE order_info @? '$.items[*] ? (@.quantity == 1)';
+```
+но результата не получил:
+
+```
+"Nested Loop  (cost=0.01..936611.94 rows=25254100 width=40) (actual time=96.410..3635.341 rows=954827 loops=1)"
+"  ->  Seq Scan on simple_json_orders  (cost=0.00..178988.94 rows=252541 width=440) (actual time=96.353..2681.756 rows=192170 loops=1)"
+"        Filter: (order_info @? '$.""items""[*]?(@.""quantity"" == 1)'::jsonpath)"
+"        Rows Removed by Filter: 2307985"
+"  ->  Function Scan on jsonb_array_elements item  (cost=0.01..1.00 rows=100 width=32) (actual time=0.001..0.001 rows=5 loops=192170)"
+"Planning Time: 0.886 ms"
+"JIT:"
+"  Functions: 6"
+"  Options: Inlining true, Optimization true, Expressions true, Deforming true"
+"  Timing: Generation 1.125 ms (Deform 0.396 ms), Inlining 21.232 ms, Optimization 44.222 ms, Emission 30.813 ms, Total 97.391 ms"
+"Execution Time: 3677.304 ms"
+```
+
+ВОПРОС Как будет выглядеть правильный индекс?
 
 # Задание 4. VIEW
 
