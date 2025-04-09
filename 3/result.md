@@ -302,3 +302,34 @@ AS quantity
  jsonb_array_elements(order_info->'items') AS item
  WHERE order_info @? '$.items[*] ? (@.quantity == 1)';
 ```
+
+Время выполнения запроса у нас сохраняется с предыдущего задания. Создаем materialized view с денормализованными данными:
+
+```sql
+CREATE MATERIALIZED VIEW mv_simple_json_orders_items AS
+SELECT
+  o.order_id,
+  (item->>'product_id')::int AS product_id,
+  (item->>'quantity')::numeric AS quantity
+FROM simple_json_orders o,
+  jsonb_array_elements(o.order_info->'items') AS item;
+
+SELECT *
+FROM mv_simple_json_orders_items
+WHERE quantity = 1;
+```
+
+```
+"Gather  (cost=1000.00..126290.64 rows=191317 width=13) (actual time=4.977..423.042 rows=200098 loops=1)"
+"  Workers Planned: 2"
+"  Workers Launched: 2"
+"  ->  Parallel Seq Scan on mv_simple_json_orders_items  (cost=0.00..106158.94 rows=79715 width=13) (actual time=4.409..381.941 rows=66699 loops=3)"
+"        Filter: (quantity = '1'::numeric)"
+"        Rows Removed by Filter: 3266635"
+"Planning Time: 0.123 ms"
+"JIT:"
+"  Functions: 6"
+"  Options: Inlining false, Optimization false, Expressions true, Deforming true"
+"  Timing: Generation 1.584 ms (Deform 0.617 ms), Inlining 0.000 ms, Optimization 1.101 ms, Emission 11.655 ms, Total 14.339 ms"
+"Execution Time: 431.900 ms"
+```
