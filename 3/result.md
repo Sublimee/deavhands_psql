@@ -244,7 +244,7 @@ AS quantity
 Пробовал такой индекс:
 
 ```sql
-CREATE INDEX idx_partial_jsonpath_quantity_13
+CREATE INDEX idx
 ON simple_json_orders
 USING GIN (order_info)
 WHERE order_info @? '$.items[*] ? (@.quantity == 1)';
