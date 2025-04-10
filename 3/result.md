@@ -241,7 +241,53 @@ AS quantity
 
 Ускорьте работу запроса с помощью GIN индекса.
 
-Пробовал такой индекс:
+Создадим индекс:
+
+```sql
+create index idx_gin on simple_json_orders using gin (order_info);
+```
+
+```
+"Nested Loop  (cost=747.24..461760.66 rows=10097800 width=40) (actual time=121.275..3015.018 rows=954827 loops=1)"
+"  Buffers: shared hit=631 read=111068"
+"  ->  Bitmap Heap Scan on simple_json_orders  (cost=747.24..158826.66 rows=100978 width=440) (actual time=121.222..1927.324 rows=192170 loops=1)"
+"        Recheck Cond: (order_info @? '$.""items""[*]?(@.""quantity"" == 1)'::jsonpath)"
+"        Rows Removed by Index Recheck: 1001878"
+"        Heap Blocks: exact=44285 lossy=66052"
+"        Buffers: shared hit=631 read=111068"
+"        ->  Bitmap Index Scan on idx_gin  (cost=0.00..721.99 rows=100978 width=0) (actual time=103.218..103.219 rows=192175 loops=1)"
+"              Index Cond: (order_info @? '$.""items""[*]?(@.""quantity"" == 1)'::jsonpath)"
+"              Buffers: shared hit=631 read=731"
+"  ->  Function Scan on jsonb_array_elements item  (cost=0.01..1.00 rows=100 width=32) (actual time=0.001..0.001 rows=5 loops=192170)"
+"Planning:"
+"  Buffers: shared read=6"
+"Planning Time: 1.143 ms"
+"JIT:"
+"  Functions: 6"
+"  Options: Inlining false, Optimization false, Expressions true, Deforming true"
+"  Timing: Generation 0.871 ms (Deform 0.303 ms), Inlining 0.000 ms, Optimization 0.563 ms, Emission 5.385 ms, Total 6.820 ms"
+"Execution Time: 3064.743 ms"
+```
+
+Также нужно предварительно выполнить команду:
+
+```sql
+analyze simple_json_orders;
+```
+
+В моем случае для того, чтобы подтянулся индекс почему-то потребовалось сделать это 2 раза.
+
+<details>
+
+<summary>Вопросы</summary>
+
+Вопрос 1. Почему индекс начал подтягиваться в ззапрос только после второго вызова запроса?
+
+```sql
+analyze simple_json_orders;
+```
+
+Вопрос 2. Почему не подтягивается такой индекс?
 
 ```sql
 CREATE INDEX idx
@@ -249,7 +295,6 @@ ON simple_json_orders
 USING GIN (order_info)
 WHERE order_info @? '$.items[*] ? (@.quantity == 1)';
 ```
-но результата не получил:
 
 ```
 "Nested Loop  (cost=0.01..936611.94 rows=25254100 width=40) (actual time=96.410..3635.341 rows=954827 loops=1)"
@@ -264,12 +309,6 @@ WHERE order_info @? '$.items[*] ? (@.quantity == 1)';
 "  Timing: Generation 1.125 ms (Deform 0.396 ms), Inlining 21.232 ms, Optimization 44.222 ms, Emission 30.813 ms, Total 97.391 ms"
 "Execution Time: 3677.304 ms"
 ```
-
-<details>
-
-<summary>Вопросы</summary>
-
-Как будет выглядеть правильный индекс?
 
 </details>
 
