@@ -332,7 +332,7 @@ CREATE TABLE simple_json_orders (
     )
  )
  FROM orders o
- WHERE o.o_orderkey IN (SELECT l_orderkey FROM lineitem LIMIT 1000000);
+ WHERE o.o_orderkey IN (SELECT l_orderkey FROM lineitem LIMIT 10000000);
 ```
 
 Ускорьте работу запроса с помощью материализованного представления. Пользователь может менять 1 на другое число.
@@ -360,22 +360,48 @@ SELECT
 FROM simple_json_orders o,
   jsonb_array_elements(o.order_info->'items') AS item;
 
-SELECT *
+EXPLAIN ANALYZE SELECT *
 FROM mv_simple_json_orders_items
 WHERE quantity = 1;
 ```
 
 ```
-"Gather  (cost=1000.00..126290.64 rows=191317 width=13) (actual time=4.977..423.042 rows=200098 loops=1)"
+"Gather  (cost=1000.00..126290.64 rows=191317 width=13) (actual time=4.832..372.479 rows=200098 loops=1)"
 "  Workers Planned: 2"
 "  Workers Launched: 2"
-"  ->  Parallel Seq Scan on mv_simple_json_orders_items  (cost=0.00..106158.94 rows=79715 width=13) (actual time=4.409..381.941 rows=66699 loops=3)"
+"  ->  Parallel Seq Scan on mv_simple_json_orders_items  (cost=0.00..106158.94 rows=79715 width=13) (actual time=3.794..342.593 rows=66699 loops=3)"
 "        Filter: (quantity = '1'::numeric)"
 "        Rows Removed by Filter: 3266635"
-"Planning Time: 0.123 ms"
+"Planning Time: 0.082 ms"
 "JIT:"
 "  Functions: 6"
 "  Options: Inlining false, Optimization false, Expressions true, Deforming true"
-"  Timing: Generation 1.584 ms (Deform 0.617 ms), Inlining 0.000 ms, Optimization 1.101 ms, Emission 11.655 ms, Total 14.339 ms"
-"Execution Time: 431.900 ms"
+"  Timing: Generation 0.764 ms (Deform 0.364 ms), Inlining 0.000 ms, Optimization 0.758 ms, Emission 10.368 ms, Total 11.890 ms"
+"Execution Time: 380.483 ms"
+```
+
+```SQL
+CREATE INDEX idx_mv ON mv_simple_json_orders_items (quantity);
+```
+
+```
+"Bitmap Heap Scan on mv_simple_json_orders_items  (cost=3587.27..60058.93 rows=191333 width=13) (actual time=23.539..309.934 rows=200098 loops=1)"
+"  Recheck Cond: (quantity = '1'::numeric)"
+"  Heap Blocks: exact=52758"
+"  ->  Bitmap Index Scan on idx_mv  (cost=0.00..3539.43 rows=191333 width=0) (actual time=14.698..14.700 rows=200098 loops=1)"
+"        Index Cond: (quantity = '1'::numeric)"
+"Planning Time: 0.116 ms"
+"Execution Time: 317.542 ms"
+```
+
+```sql
+CREATE INDEX idx_mv_only ON mv_simple_json_orders_items (quantity) INCLUDE (order_id, product_id);
+```
+
+```
+"Index Only Scan using idx_mv_only on mv_simple_json_orders_items  (cost=0.43..6400.72 rows=191333 width=13) (actual time=0.048..23.556 rows=200098 loops=1)"
+"  Index Cond: (quantity = '1'::numeric)"
+"  Heap Fetches: 0"
+"Planning Time: 0.126 ms"
+"Execution Time: 29.978 ms"
 ```
