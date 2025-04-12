@@ -55,3 +55,20 @@ VACUUM
 ```
 
 Все 1 800 000 строк в таблице были заморожены.
+
+# Задание 3. VACUUM и параллельные транзакции
+
+* Найдите количество замороженных строк, если после начала транзакции провести модификацию таблицы и выполнить очистку.
+
+```sql
+begin; set transaction isolation level repeatable read; select * from customer WHERE c_custkey = 100;
+```
+
+* Во втором соединении:
+
+```sql
+UPDATE customer SET c_comment = 'Updated by B' WHERE c_custkey = 100;
+vacuum (verbose,freeze) customer;
+```
+
+* Сравните с read committed.
